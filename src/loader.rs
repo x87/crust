@@ -1,11 +1,10 @@
-use crate::data_type;
-use crate::parser;
-use byteorder::{LittleEndian, ReadBytesExt};
-use std::convert::{TryFrom, TryInto};
-use std::fmt::Debug;
-use std::{collections, fs, io};
+use crate::definitions;
+use crate::platform;
+use crate::types;
 
-pub type ScriptChunk = Vec<u8>;
+use byteorder::{LittleEndian, ReadBytesExt};
+use std::fmt::Debug;
+use std::{fs, io};
 
 const MISSIONS_SEG: usize = 2;
 const EXTERNALS_SEG: usize = 3;
@@ -17,12 +16,12 @@ enum ScriptType {
 }
 
 struct ScriptFile {
-    code: ScriptChunk,
+    code: types::ScriptChunk,
     size: u32,
 }
 
 impl ScriptFile {
-    fn new(code: ScriptChunk) -> Self {
+    fn new(code: types::ScriptChunk) -> Self {
         Self {
             size: code.len() as u32,
             code,
@@ -35,7 +34,7 @@ impl ScriptFile {
 }
 
 #[derive(Debug)]
-pub struct Script(Vec<ScriptChunk>);
+pub struct Script(Vec<types::ScriptChunk>);
 impl Script {
     fn new() -> Self {
         Self { 0: Vec::new() }
@@ -46,7 +45,7 @@ impl Script {
 }
 
 impl IntoIterator for Script {
-    type Item = ScriptChunk;
+    type Item = types::ScriptChunk;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -120,92 +119,67 @@ impl ImgArchive {
     }
 }
 
-impl<'a, T, U> parser::Parser<'a, T, U>
-where
-    T: TryFrom<u8> + data_type::DataTypeMeta,
-    U: TryInto<i32> + Clone + Debug,
-    // <U as TryInto<i32>>::Error: std::fmt::Debug,
-{
-    fn get_segments(&mut self) -> Vec<(u32, u32)> {
-        let mut offsets: Vec<(u32, u32)> = Vec::new();
-        loop {
-            match self.next() {
-                Some(inst) if inst.opcode != 0xFFFF => match inst.params[0].clone().try_into() {
-                    Ok(destination) if destination > 0 => {
-                        offsets.push((self.get_position(), destination as u32));
-                        self.set_position(destination as u32);
+fn get_segments<'a>(chunk: &types::ScriptChunk, game: &platform::Game) -> Vec<(u32, u32)> {
+    let mut offsets: Vec<(u32, u32)> = Vec::new();
+    let goto = definitions::new_with_goto();
+    let mut parser = platform::get_parser(game, chunk, &goto);
+    loop {
+        match parser.next() {
+            Some(inst) if inst.opcode != 0xFFFF => {
+                // match TryInto::<i32>::try_into(*inst.params[0]) {
+                match inst.params[0].to_i32() {
+                    Some(destination) if destination > 0 => {
+                        offsets.push((parser.get_parser().get_position(), destination as u32));
+                        parser.get_parser_as_mut().set_position(destination as u32);
                     }
                     _ => break,
-                },
-                Some(_) => break,
-                None => break,
+                }
             }
+            Some(_) => break,
+            None => break,
         }
-        offsets
     }
+    offsets
 }
 
-pub fn load<T, U>(
-    input_file: String,
-    reader: Box<dyn data_type::Reader<T, U>>,
-) -> Result<Script, String>
-where
-    T: TryFrom<u8> + data_type::DataTypeMeta,
-    U: TryInto<i32> + Clone + Debug,
-{
-    match fs::read(&input_file) {
-        Ok(chunk) => {
-            let mut only_goto = collections::HashMap::new();
-            only_goto.insert(
-                2,
-                data_type::CommandDefinition {
-                    id: String::from("0002"),
-                    name: String::from("goto"),
-                    params: vec![data_type::CommandDefinitionParam {
-                        r#type: String::from(data_type::PARAM_LABEL),
-                    }],
-                },
-            );
+pub fn load(input_file: String, game: &platform::Game) -> Result<Script, String> {
+    let chunk =
+        fs::read(&input_file).map_err(|_| format!("Can't read input file {}", input_file))?;
 
-            let mut parser = parser::Parser::new(&chunk, &only_goto, reader);
-            let segments = parser.get_segments();
+    let segments = get_segments(&chunk, game);
+    let script_file = ScriptFile::new(chunk);
+    let mut script = Script::new();
 
-            let script_file = ScriptFile::new(chunk);
-            let mut script = Script::new();
-            if segments.len() > 0 {
-                match segments.len() {
-                    0..=2 => return Err(String::from("No missions segment found")),
-                    3 | 6 => {}
-                    _ => return Err(String::from("Invalid header structure")),
-                }
-                let (offset, end) = segments.get(MISSIONS_SEG).unwrap();
-                let missions = Missions::new(script_file.extract(*offset, *end), script_file.size);
-                let (_, main_start) = segments.last().unwrap();
-                let main_script = script_file.extract(*main_start, missions.main_size);
-                script.register_script(main_script, ScriptType::MAIN);
-                for (start, end) in missions {
-                    // todo: empty missions
-                    if end > start {
-                        script
-                            .register_script(script_file.extract(start, end), ScriptType::MISSION);
-                    }
-                }
-                if let Some((offset, end)) = segments.get(EXTERNALS_SEG) {
-                    let externals: Vec<String> =
-                        Externals::new(script_file.extract(*offset, *end)).collect();
-                    if externals.len() > 0 {
-                        let script_img = ImgArchive::new("script.img".to_string());
-                        for name in externals {
-                            script.register_script(script_img.extract(name), ScriptType::EXTERNAL);
-                        }
-                    }
-                }
-            } else {
-                let main_script = script_file.extract(0, script_file.size);
-                script.register_script(main_script, ScriptType::EXTERNAL);
-            }
-            Ok(script)
+    if segments.len() > 0 {
+        match segments.len() {
+            0..=2 => return Err(String::from("No missions segment found")),
+            3 | 6 => {}
+            _ => return Err(String::from("Invalid header structure")),
         }
-        Err(_) => Err(format!("Can't read input file {}", input_file)),
+        let (offset, end) = segments.get(MISSIONS_SEG).unwrap();
+        let missions = Missions::new(script_file.extract(*offset, *end), script_file.size);
+        let (_, main_start) = segments.last().unwrap();
+        let main_script = script_file.extract(*main_start, missions.main_size);
+        script.register_script(main_script, ScriptType::MAIN);
+        for (start, end) in missions {
+            // todo: empty missions
+            if end > start {
+                script.register_script(script_file.extract(start, end), ScriptType::MISSION);
+            }
+        }
+        if let Some((offset, end)) = segments.get(EXTERNALS_SEG) {
+            let externals: Vec<String> =
+                Externals::new(script_file.extract(*offset, *end)).collect();
+            if externals.len() > 0 {
+                let script_img = ImgArchive::new("script.img".to_string());
+                for name in externals {
+                    script.register_script(script_img.extract(name), ScriptType::EXTERNAL);
+                }
+            }
+        }
+    } else {
+        let main_script = script_file.extract(0, script_file.size);
+        script.register_script(main_script, ScriptType::EXTERNAL);
     }
+    Ok(script)
 }
