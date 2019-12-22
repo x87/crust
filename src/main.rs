@@ -23,16 +23,15 @@ fn get_out_file_name(script_name: String) -> String {
 }
 
 fn main() {
-    let definitions = &definitions::load();
-
     let args: Vec<String> = std::env::args().collect();
     let game = &platform::Game::GTA3;
-
     let input_file = args
         .get(1)
         .unwrap_or_else(|| panic!("Provide input file name"));
 
-    let scripts = loader::load(input_file.to_string(), game).unwrap();
+    let defs = &definitions::DefinitionMap::new();
+
+    let scripts = loader::load(input_file.to_string(), game, &defs).unwrap();
     let mut pool = scoped_threadpool::Pool::new(4);
 
     // temp
@@ -42,13 +41,13 @@ fn main() {
     pool.scoped(|scoped| {
         for scr in scripts {
             scoped.execute(move || {
-                let parser = platform::get_parser(game, &scr, definitions);
+                let parser = platform::get_parser(game, &scr, defs);
                 let instructions = parser.collect();
-                let s = process::Script::new(instructions);
+                let s = process::Script::new(instructions, defs);
 
                 let mut f = fs::File::create(get_out_file_name(s.name)).unwrap();
 
-                for inst in s.instructions {
+                for mut inst in s.instructions {
                     writeln!(f, "{}", inst.print()).unwrap()
                 }
             });

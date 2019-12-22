@@ -119,22 +119,30 @@ impl ImgArchive {
     }
 }
 
-fn get_segments<'a>(chunk: &types::ScriptChunk, game: &platform::Game) -> Vec<(u32, u32)> {
+fn get_segments<'a>(
+    chunk: &types::ScriptChunk,
+    game: &platform::Game,
+    defs: &definitions::DefinitionMap,
+) -> Vec<(u32, u32)> {
     let mut offsets: Vec<(u32, u32)> = Vec::new();
-    let goto = definitions::new_with_goto();
-    let mut parser = platform::get_parser(game, chunk, &goto);
+    let (op, c) = defs
+        .find_by_attr(definitions::ATTRIBUTE_GOTO)
+        .expect(&format!(
+            "Can't find a command with attribute {}",
+            definitions::ATTRIBUTE_GOTO
+        ));
+    let defs = definitions::DefinitionMap::from_pairs(vec![(*op, c.clone())]);
+
+    let mut parser = platform::get_parser(game, chunk, &defs);
     loop {
         match parser.next() {
-            Some(inst) if inst.opcode != 0xFFFF => {
-                // match TryInto::<i32>::try_into(*inst.params[0]) {
-                match inst.params[0].to_i32() {
-                    Some(destination) if destination > 0 => {
-                        offsets.push((parser.get_parser().get_position(), destination as u32));
-                        parser.get_parser_as_mut().set_position(destination as u32);
-                    }
-                    _ => break,
+            Some(inst) if inst.opcode != 0xFFFF => match inst.params[0].to_i32() {
+                Some(destination) if destination > 0 => {
+                    offsets.push((parser.get_parser().get_position(), destination as u32));
+                    parser.get_parser_as_mut().set_position(destination as u32);
                 }
-            }
+                _ => break,
+            },
             Some(_) => break,
             None => break,
         }
@@ -142,11 +150,15 @@ fn get_segments<'a>(chunk: &types::ScriptChunk, game: &platform::Game) -> Vec<(u
     offsets
 }
 
-pub fn load(input_file: String, game: &platform::Game) -> Result<Script, String> {
+pub fn load(
+    input_file: String,
+    game: &platform::Game,
+    defs: &definitions::DefinitionMap,
+) -> Result<Script, String> {
     let chunk =
         fs::read(&input_file).map_err(|_| format!("Can't read input file {}", input_file))?;
 
-    let segments = get_segments(&chunk, game);
+    let segments = get_segments(&chunk, game, defs);
     let script_file = ScriptFile::new(chunk);
     let mut script = Script::new();
 

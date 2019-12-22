@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::str;
 
 // const PARAM_ANY: &str = "any";
@@ -8,7 +9,7 @@ pub const INVALID_OPCODE: &str = "invalid";
 pub type Opcode = u16;
 pub type ScriptChunk = Vec<u8>;
 
-pub trait InstructionParam: std::fmt::Debug {
+pub trait InstructionParam: std::fmt::Debug + std::fmt::Display {
     fn to_string(&self) -> Option<String>;
     fn to_i32(&self) -> Option<i32>;
 }
@@ -21,12 +22,13 @@ pub struct Instruction<'a> {
 }
 
 impl<'a> Instruction<'a> {
-    pub fn print(&self) -> String {
+    pub fn print(&mut self) -> String {
+        let params: String = self.params.iter().join(" ");
         format!(
-            "{:>0width$}: {}, {:?}",
+            "{:>0width$}: {} {}",
             self.offset,
             self.name,
-            self.params,
+            params,
             width = 6
         )
     }

@@ -5,7 +5,7 @@ use crate::types;
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::convert::TryFrom;
 use std::io::Read;
-use std::{io, str};
+use std::{fmt, io, str};
 
 #[derive(Debug, Clone)]
 pub enum InstructionParam3 {
@@ -50,11 +50,26 @@ impl TryFrom<u8> for DataType3 {
         }
     }
 }
+impl fmt::Display for InstructionParam3 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InstructionParam3::EOL => write!(f, ""),
+            InstructionParam3::STR(d) => write!(f, "{}", d),
+            InstructionParam3::NUM8(d) => write!(f, "{}", d),
+            InstructionParam3::NUM16(d) => write!(f, "{}", d),
+            InstructionParam3::NUM32(d) => write!(f, "{}", d),
+            InstructionParam3::FLOAT(d) => write!(f, "{}", d),
+            InstructionParam3::GVAR(d) => write!(f, "${}", d),
+            InstructionParam3::LVAR(d) => write!(f, "{}@", d),
+            InstructionParam3::RAW(d) => write!(f, "{:02X}", d),
+        }
+    }
+}
 
 impl types::InstructionParam for InstructionParam3 {
     fn to_string(&self) -> Option<String> {
         match self {
-            InstructionParam3::STR(d) => Some(d.clone()),
+            InstructionParam3::STR(d) => Some(String::from(d)),
             _ => None,
         }
     }
@@ -140,12 +155,16 @@ impl<'a> Parser3<'a> {
 
     pub fn try_next(&mut self, offset: u32) -> Result<types::Instruction<'a>, io::Error> {
         let opcode = self.0.cursor.read_u16::<LittleEndian>()?;
-        let def = self.0.definitions.get(&(opcode & 0x7FFF)).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Unknown opcode {} at {}", opcode, offset),
-            )
-        })?;
+        let def = self
+            .0
+            .definitions
+            .find_by_op(&(opcode & 0x7FFF))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Unknown opcode {} at {}", opcode, offset),
+                )
+            })?;
         let mut params = vec![];
 
         'outer: for param in &def.params {
