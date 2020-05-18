@@ -35,7 +35,9 @@ fn main() {
     let mut pool = scoped_threadpool::Pool::new(4);
 
     // temp
-    fs::remove_dir_all("out").unwrap();
+    if fs::metadata("out").is_ok() {
+        fs::remove_dir_all("out").unwrap();
+    }
     fs::create_dir_all("out").unwrap();
 
     pool.scoped(|scoped| {
