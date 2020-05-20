@@ -1,6 +1,6 @@
 use crate::definitions;
 use crate::parser;
-use crate::types;
+use crate::types::*;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::convert::TryFrom;
@@ -11,16 +11,14 @@ use std::{fmt, io, str};
 pub enum InstructionParam3 {
     EOL,
     RAW(u8),
-    // immediate values
     NUM8(i8),
     NUM16(i16),
     NUM32(i32),
     FLOAT(f32),
     STR(String),
-
-    // variables
     GVAR(u16),
     LVAR(u16),
+    OFFSET(i32),
 }
 
 #[derive(Debug)]
@@ -50,6 +48,7 @@ impl TryFrom<u8> for DataType3 {
         }
     }
 }
+
 impl fmt::Display for InstructionParam3 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -58,6 +57,7 @@ impl fmt::Display for InstructionParam3 {
             InstructionParam3::NUM8(d) => write!(f, "{}", d),
             InstructionParam3::NUM16(d) => write!(f, "{}", d),
             InstructionParam3::NUM32(d) => write!(f, "{}", d),
+            InstructionParam3::OFFSET(d) => write!(f, "@label_{}", d.abs()),
             InstructionParam3::FLOAT(d) => write!(f, "{}", d),
             InstructionParam3::GVAR(d) => write!(f, "${}", d),
             InstructionParam3::LVAR(d) => write!(f, "{}@", d),
@@ -66,25 +66,23 @@ impl fmt::Display for InstructionParam3 {
     }
 }
 
-impl types::InstructionParam for InstructionParam3 {
+impl InstructionParam for InstructionParam3 {
     fn to_string(&self) -> Option<String> {
         match self {
             InstructionParam3::STR(d) => Some(String::from(d)),
             _ => None,
         }
     }
-    fn to_i32(&self) -> Option<i32> {
+    fn to_offset(&self) -> Option<i32> {
         match self {
-            InstructionParam3::NUM8(d) => i32::try_from(*d).ok(),
-            InstructionParam3::NUM16(d) => i32::try_from(*d).ok(),
-            InstructionParam3::NUM32(d) => i32::try_from(*d).ok(),
+            InstructionParam3::OFFSET(d) => Some(*d),
             _ => None,
         }
     }
 }
 
 impl<'a> Iterator for Parser3<'a> {
-    type Item = Box<types::Instruction<'a>>;
+    type Item = Box<Instruction>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let offset = self.0.get_position();
@@ -107,11 +105,11 @@ impl<'a> Parser3<'a> {
         Ok(InstructionParam3::RAW(self.0.cursor.read_u8()?))
     }
 
-    pub fn rollback(&mut self, offset: u32) -> Result<types::Instruction<'a>, io::Error> {
+    pub fn rollback(&mut self, offset: u32) -> Result<Instruction, io::Error> {
         self.0.set_position(offset);
-        Ok(types::Instruction {
+        Ok(Instruction {
             opcode: 0xFFFF,
-            name: &types::INVALID_OPCODE,
+            name: INVALID_OPCODE.to_string(),
             offset,
             params: vec![Box::new(self.get_raw()?)],
         })
@@ -120,7 +118,8 @@ impl<'a> Parser3<'a> {
     fn to_param(
         &mut self,
         data_type: DataType3,
-    ) -> Result<Box<dyn types::InstructionParam>, io::Error> {
+        param_type: &String,
+    ) -> Result<Box<dyn InstructionParam>, io::Error> {
         match data_type {
             DataType3::EOL => Ok(Box::new(InstructionParam3::EOL)),
             // DataType3::RAW => Ok(InstructionParam3::RAW(cursor.read_u8()?)),
@@ -128,9 +127,14 @@ impl<'a> Parser3<'a> {
             DataType3::NUM16 => Ok(Box::new(InstructionParam3::NUM16(
                 self.0.cursor.read_i16::<LittleEndian>()?,
             ))),
-            DataType3::NUM32 => Ok(Box::new(InstructionParam3::NUM32(
-                self.0.cursor.read_i32::<LittleEndian>()?,
-            ))),
+            DataType3::NUM32 => {
+                let val = self.0.cursor.read_i32::<LittleEndian>()?;
+                if param_type == PARAM_OFFSET {
+                    Ok(Box::new(InstructionParam3::OFFSET(val)))
+                } else {
+                    Ok(Box::new(InstructionParam3::NUM32(val)))
+                }
+            }
             DataType3::GVAR => Ok(Box::new(InstructionParam3::GVAR(
                 self.0.cursor.read_u16::<LittleEndian>()?,
             ))),
@@ -153,7 +157,7 @@ impl<'a> Parser3<'a> {
         }
     }
 
-    pub fn try_next(&mut self, offset: u32) -> Result<types::Instruction<'a>, io::Error> {
+    pub fn try_next(&mut self, offset: u32) -> Result<Instruction, io::Error> {
         let opcode = self.0.cursor.read_u16::<LittleEndian>()?;
         let def = self
             .0
@@ -184,7 +188,7 @@ impl<'a> Parser3<'a> {
                 }
 
                 if let DataType3::EOL = data_type {
-                    if param.r#type != types::PARAM_ARGUMENTS {
+                    if param.r#type != PARAM_ARGUMENTS {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             format!("Unexpected EOL parameter at {}", offset),
@@ -193,25 +197,29 @@ impl<'a> Parser3<'a> {
                     break 'outer;
                 }
 
-                params.push(self.to_param(data_type)?);
+                params.push(self.to_param(data_type, &param.r#type)?);
 
-                if param.r#type != types::PARAM_ARGUMENTS {
+                if param.r#type != PARAM_ARGUMENTS {
                     break;
                 }
             }
         }
 
-        Ok(types::Instruction {
+        Ok(Instruction {
             opcode,
-            name: &def.name,
-            offset,
+            name: def.name.clone(),
+            offset: offset + self.0.base_offset,
             params,
         })
     }
 
-    pub fn new(chunk: &'a types::ScriptChunk, definitions: &'a definitions::DefinitionMap) -> Self {
+    pub fn new(
+        chunk: &'a ScriptChunk,
+        definitions: &'a definitions::DefinitionMap,
+        base_offset: u32,
+    ) -> Self {
         Self {
-            0: parser::Parser::new(chunk, definitions),
+            0: parser::Parser::new(chunk, definitions, base_offset),
         }
     }
 }

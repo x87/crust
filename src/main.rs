@@ -1,26 +1,14 @@
 mod definitions;
+mod disassembler;
 mod loader;
 mod parser;
 mod platform;
-mod process;
 mod types;
 
+use disassembler::scanner;
 use scoped_threadpool;
-use std::io::prelude::*;
-use std::{fs, path};
-
-fn get_out_file_name(script_name: String) -> String {
-    let mut out_file = format!("out/{}.txt", script_name);
-    let mut count = 0;
-    loop {
-        if path::Path::new(&out_file).is_file() {
-            count += 1;
-            out_file = format!("out/{}_{}.txt", script_name, count);
-        } else {
-            return out_file;
-        }
-    }
-}
+use std::fs;
+use std::sync::Mutex;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -30,28 +18,43 @@ fn main() {
         .unwrap_or_else(|| panic!("Provide input file name"));
 
     let defs = &definitions::DefinitionMap::new();
-
     let scripts = loader::load(input_file.to_string(), game, &defs).unwrap();
     let mut pool = scoped_threadpool::Pool::new(4);
-
     // temp
     if fs::metadata("out").is_ok() {
         fs::remove_dir_all("out").unwrap();
     }
     fs::create_dir_all("out").unwrap();
 
+    let global_context_mutex = Mutex::new(disassembler::GlobalContext { targets: vec![] });
+    let irs_mutex: Mutex<Vec<disassembler::IR>> = Mutex::new(vec![]);
+    let scanner = scanner::Scanner::new(defs);
+    let dasm = disassembler::Disassembler::new(defs, &scanner);
+
     pool.scoped(|scoped| {
         for scr in scripts {
-            scoped.execute(move || {
-                let parser = platform::get_parser(game, &scr, defs);
+            scoped.execute(|| {
+                let parser = platform::get_parser(game, &scr.chunk, defs, scr.base_offset);
                 let instructions = parser.collect();
-                let s = process::Script::new(instructions, defs);
 
-                let mut f = fs::File::create(get_out_file_name(s.name)).unwrap();
-
-                for mut inst in s.instructions {
-                    writeln!(f, "{}", inst.print()).unwrap()
+                {
+                    let global_addresses = scanner.collect_global_addresses(&instructions);
+                    let mut global_context = global_context_mutex.lock().unwrap();
+                    (*global_context).targets.extend(global_addresses);
                 }
+
+                let ir = dasm.run(instructions, scr.script_type);
+                let mut irs = irs_mutex.lock().unwrap();
+                (*irs).push(ir);
+            });
+        }
+    });
+
+    let context = global_context_mutex.into_inner().unwrap();
+    pool.scoped(|scoped| {
+        for ir in irs_mutex.into_inner().unwrap() {
+            scoped.execute(|| {
+                dasm.print(ir, &context);
             });
         }
     });
