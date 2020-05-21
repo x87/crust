@@ -57,10 +57,10 @@ impl fmt::Display for InstructionParam3 {
             InstructionParam3::NUM8(d) => write!(f, "{}", d),
             InstructionParam3::NUM16(d) => write!(f, "{}", d),
             InstructionParam3::NUM32(d) => write!(f, "{}", d),
-            InstructionParam3::OFFSET(d) => write!(f, "@label_{}", d.abs()),
+            InstructionParam3::OFFSET(d) => write!(f, "{}", d.abs()),
             InstructionParam3::FLOAT(d) => write!(f, "{}", d),
-            InstructionParam3::GVAR(d) => write!(f, "${}", d),
-            InstructionParam3::LVAR(d) => write!(f, "{}@", d),
+            InstructionParam3::GVAR(d) => write!(f, "gvar_{}", d),
+            InstructionParam3::LVAR(d) => write!(f, "lvar_{}", d),
             InstructionParam3::RAW(d) => write!(f, "{:02X}", d),
         }
     }

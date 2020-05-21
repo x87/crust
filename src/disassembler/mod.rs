@@ -83,12 +83,12 @@ impl<'a> Disassembler<'a> {
             match ir.script_type {
                 ScriptType::MAIN => {
                     if global_context.targets.contains(&inst_offset) {
-                        writeln!(f, "\n:label_{}", inst.offset).unwrap()
+                        writeln!(f, "\n:{}", inst.offset).unwrap()
                     }
                 }
                 _ => {
                     if ir.state.targets.contains(&(-inst_offset)) {
-                        writeln!(f, "\n:label_{}", inst.offset).unwrap()
+                        writeln!(f, "\n:{}", inst.offset).unwrap()
                     }
                 }
             }

@@ -930,7 +930,7 @@
   {
     "id": 79,
     "name": "START_NEW_SCRIPT",
-    "attrs": [],
+    "attrs": ["branch"],
     "params": [
       {
         "type": "label"
@@ -2625,7 +2625,7 @@
   {
     "id": 215,
     "name": "LAUNCH_MISSION",
-    "attrs": [],
+    "attrs": ["branch"],
     "params": [
       {
         "type": "label"
