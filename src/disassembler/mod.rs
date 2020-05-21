@@ -1,9 +1,13 @@
 pub mod scanner;
+
 use crate::definitions::*;
 use crate::types::*;
+
 use std::convert::TryInto;
 use std::io::prelude::*;
 use std::{collections, fs, path};
+
+use slugify::slugify;
 
 pub struct GlobalContext {
     pub targets: Vec<i32>,
@@ -41,7 +45,7 @@ impl<'a> Disassembler<'a> {
 
     pub fn run(&self, instructions: Vec<Box<Instruction>>, script_type: ScriptType) -> IR {
         let mut name = String::from("noname");
-        let def = self
+        let name_def = self
             .definitions
             .find_by_attr(attribute::NAME)
             .expect(&format!(
@@ -50,7 +54,7 @@ impl<'a> Disassembler<'a> {
             ));
 
         for i in &instructions {
-            if i.opcode == def.id {
+            if i.opcode == name_def.id {
                 name = i.params.get(0).unwrap().to_string();
                 break;
             }
@@ -64,7 +68,7 @@ impl<'a> Disassembler<'a> {
         }
 
         IR {
-            name,
+            name: slugify!(name.as_str(), separator = "_"),
             instructions,
             script_type,
             state: LocalContext { targets },

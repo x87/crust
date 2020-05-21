@@ -53,7 +53,7 @@ impl fmt::Display for InstructionParam3 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             InstructionParam3::EOL => write!(f, ""),
-            InstructionParam3::STR(d) => write!(f, "{}", d),
+            InstructionParam3::STR(d) => write!(f, "\"{}\"", d),
             InstructionParam3::NUM8(d) => write!(f, "{}", d),
             InstructionParam3::NUM16(d) => write!(f, "{}", d),
             InstructionParam3::NUM32(d) => write!(f, "{}", d),
@@ -109,7 +109,7 @@ impl<'a> Parser3<'a> {
         self.0.set_position(offset);
         Ok(Instruction {
             opcode: 0xFFFF,
-            name: INVALID_OPCODE.to_string(),
+            name: String::from(INVALID_OPCODE),
             offset,
             params: vec![Box::new(self.get_raw()?)],
         })

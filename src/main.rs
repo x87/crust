@@ -4,6 +4,7 @@ mod loader;
 mod parser;
 mod platform;
 mod types;
+extern crate slugify;
 
 use disassembler::scanner;
 use scoped_threadpool;

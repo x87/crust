@@ -181,7 +181,7 @@ pub fn load(
             let externals: Vec<String> =
                 Externals::new(script_file.extract(*offset, *end)).collect();
             if externals.len() > 0 {
-                let script_img = ImgArchive::new("script.img".to_string());
+                let script_img = ImgArchive::new(String::from("script.img"));
                 for name in externals {
                     scripts.push(Script::new(
                         script_img.extract(name).to_vec(),
