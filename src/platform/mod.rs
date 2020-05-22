@@ -2,12 +2,9 @@ use crate::definitions;
 use crate::parser;
 use crate::types;
 pub mod gta3;
-pub mod vc;
 
 pub enum Game {
     GTA3,
-    VC,
-    SA,
 }
 
 pub fn get_parser<'a>(
