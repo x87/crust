@@ -1,27 +1,21 @@
 use crate::definitions;
 use crate::platform;
-use crate::types;
+use crate::types::*;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::fmt::Debug;
+use io::Cursor;
 use std::{fs, io};
 
 const MISSIONS_SEG: usize = 2;
 const EXTERNALS_SEG: usize = 3;
 
-enum ScriptType {
-    MAIN,
-    MISSION,
-    EXTERNAL,
-}
-
 struct ScriptFile {
-    code: types::ScriptChunk,
+    code: ScriptChunk,
     size: u32,
 }
 
 impl ScriptFile {
-    fn new(code: types::ScriptChunk) -> Self {
+    fn new(code: ScriptChunk) -> Self {
         Self {
             size: code.len() as u32,
             code,
@@ -33,23 +27,19 @@ impl ScriptFile {
     }
 }
 
-#[derive(Debug)]
-pub struct Script(Vec<types::ScriptChunk>);
-impl Script {
-    fn new() -> Self {
-        Self { 0: Vec::new() }
-    }
-    fn register_script(&mut self, buf: &[u8], _script_type: ScriptType) {
-        self.0.push(buf.to_vec());
-    }
+pub struct Script {
+    pub chunk: ScriptChunk,
+    pub script_type: ScriptType,
+    pub base_offset: u32,
 }
 
-impl IntoIterator for Script {
-    type Item = types::ScriptChunk;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+impl Script {
+    fn new(chunk: ScriptChunk, script_type: ScriptType, base_offset: u32) -> Self {
+        Self {
+            chunk,
+            script_type,
+            base_offset,
+        }
     }
 }
 
@@ -61,7 +51,7 @@ struct Missions {
 }
 impl Missions {
     fn new(chunk: &[u8], file_size: u32) -> Self {
-        let mut cursor = io::Cursor::new(chunk);
+        let mut cursor = Cursor::new(chunk);
         cursor.set_position(1); // todo: assert segment id?
 
         let main_size = cursor.read_u32::<LittleEndian>().unwrap();
@@ -120,23 +110,23 @@ impl ImgArchive {
 }
 
 fn get_segments<'a>(
-    chunk: &types::ScriptChunk,
+    chunk: &ScriptChunk,
     game: &platform::Game,
     defs: &definitions::DefinitionMap,
 ) -> Vec<(u32, u32)> {
     let mut offsets: Vec<(u32, u32)> = Vec::new();
-    let (op, c) = defs
-        .find_by_attr(definitions::ATTRIBUTE_GOTO)
+    let c = defs
+        .find_by_attr(definitions::attribute::SEGMENT)
         .expect(&format!(
             "Can't find a command with attribute {}",
-            definitions::ATTRIBUTE_GOTO
+            definitions::attribute::SEGMENT
         ));
-    let defs = definitions::DefinitionMap::from_pairs(vec![(*op, c.clone())]);
+    let defs = definitions::DefinitionMap::from_pairs(vec![(c.id, c.clone())]);
 
-    let mut parser = platform::get_parser(game, chunk, &defs);
+    let mut parser = platform::get_parser(game, chunk, &defs, 0);
     loop {
         match parser.next() {
-            Some(inst) if inst.opcode != 0xFFFF => match inst.params[0].to_i32() {
+            Some(inst) if inst.opcode != 0xFFFF => match inst.params[0].to_offset() {
                 Some(destination) if destination > 0 => {
                     offsets.push((parser.get_parser().get_position(), destination as u32));
                     parser.get_parser_as_mut().set_position(destination as u32);
@@ -154,13 +144,13 @@ pub fn load(
     input_file: String,
     game: &platform::Game,
     defs: &definitions::DefinitionMap,
-) -> Result<Script, String> {
+) -> Result<Vec<Script>, String> {
     let chunk =
         fs::read(&input_file).map_err(|_| format!("Can't read input file {}", input_file))?;
 
     let segments = get_segments(&chunk, game, defs);
     let script_file = ScriptFile::new(chunk);
-    let mut script = Script::new();
+    let mut scripts = Vec::new();
 
     if segments.len() > 0 {
         match segments.len() {
@@ -172,26 +162,38 @@ pub fn load(
         let missions = Missions::new(script_file.extract(*offset, *end), script_file.size);
         let (_, main_start) = segments.last().unwrap();
         let main_script = script_file.extract(*main_start, missions.main_size);
-        script.register_script(main_script, ScriptType::MAIN);
+        scripts.push(Script::new(
+            main_script.to_vec(),
+            ScriptType::MAIN,
+            *main_start,
+        ));
         for (start, end) in missions {
             // todo: empty missions
             if end > start {
-                script.register_script(script_file.extract(start, end), ScriptType::MISSION);
+                scripts.push(Script::new(
+                    script_file.extract(start, end).to_vec(),
+                    ScriptType::MISSION,
+                    0,
+                ));
             }
         }
         if let Some((offset, end)) = segments.get(EXTERNALS_SEG) {
             let externals: Vec<String> =
                 Externals::new(script_file.extract(*offset, *end)).collect();
             if externals.len() > 0 {
-                let script_img = ImgArchive::new("script.img".to_string());
+                let script_img = ImgArchive::new(String::from("script.img"));
                 for name in externals {
-                    script.register_script(script_img.extract(name), ScriptType::EXTERNAL);
+                    scripts.push(Script::new(
+                        script_img.extract(name).to_vec(),
+                        ScriptType::EXTERNAL,
+                        0,
+                    ));
                 }
             }
         }
     } else {
         let main_script = script_file.extract(0, script_file.size);
-        script.register_script(main_script, ScriptType::EXTERNAL);
+        scripts.push(Script::new(main_script.to_vec(), ScriptType::EXTERNAL, 0));
     }
-    Ok(script)
+    Ok(scripts)
 }

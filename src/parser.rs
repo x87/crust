@@ -1,19 +1,25 @@
-use crate::definitions;
+use crate::definitions::DefinitionMap;
 use crate::types;
-use std::io;
+use std::io::Cursor;
 
 pub struct Parser<'a> {
-    pub cursor: io::Cursor<&'a types::ScriptChunk>,
-    pub definitions: &'a definitions::DefinitionMap,
+    pub cursor: Cursor<&'a types::ScriptChunk>,
+    pub definitions: &'a DefinitionMap,
     pub size: u32,
+    pub base_offset: u32,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(chunk: &'a types::ScriptChunk, definitions: &'a definitions::DefinitionMap) -> Self {
+    pub fn new(
+        chunk: &'a types::ScriptChunk,
+        definitions: &'a DefinitionMap,
+        base_offset: u32,
+    ) -> Self {
         Self {
             definitions,
             size: chunk.len() as u32,
-            cursor: io::Cursor::new(chunk),
+            cursor: Cursor::new(chunk),
+            base_offset,
         }
     }
     pub fn get_position(&self) -> u32 {
@@ -24,7 +30,7 @@ impl<'a> Parser<'a> {
         self.cursor.set_position(position as u64)
     }
 }
-pub trait Parse<'a>: Iterator<Item = Box<types::Instruction<'a>>> {
+pub trait Parse<'a>: Iterator<Item = Box<types::Instruction>> {
     fn get_parser_as_mut(&mut self) -> &mut Parser<'a>;
     fn get_parser(&self) -> &Parser<'a>;
 }
