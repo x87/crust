@@ -1,9 +1,12 @@
-use crate::definitions;
+use crate::library::Command;
+// use crate::definitions;
 use crate::platform;
+use crate::types;
 use crate::types::*;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use io::Cursor;
+use std::collections::HashMap;
 use std::{fs, io};
 
 const MISSIONS_SEG: usize = 2;
@@ -112,16 +115,15 @@ impl ImgArchive {
 fn get_segments<'a>(
     chunk: &ScriptChunk,
     game: &platform::Game,
-    defs: &definitions::DefinitionMap,
+    defs: &HashMap<types::Opcode, Command>,
 ) -> Vec<(u32, u32)> {
     let mut offsets: Vec<(u32, u32)> = Vec::new();
-    let c = defs
-        .find_by_attr(definitions::attribute::SEGMENT)
-        .expect(&format!(
-            "Can't find a command with attribute {}",
-            definitions::attribute::SEGMENT
-        ));
-    let defs = definitions::DefinitionMap::from_pairs(vec![(c.id, c.clone())]);
+    let (id, c) = defs
+        .iter()
+        .find(|(_id, c)| c.attrs.is_segment)
+        .expect("Can't find a command with attribute is_segment");
+    let mut defs = HashMap::new();
+    defs.insert(id.clone(), c.clone());
 
     let mut parser = platform::get_parser(game, chunk, &defs, 0);
     loop {
@@ -143,7 +145,7 @@ fn get_segments<'a>(
 pub fn load(
     input_file: String,
     game: &platform::Game,
-    defs: &definitions::DefinitionMap,
+    defs: &HashMap<types::Opcode, Command>,
 ) -> Result<Vec<Script>, String> {
     let chunk =
         fs::read(&input_file).map_err(|_| format!("Can't read input file {}", input_file))?;

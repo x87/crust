@@ -1,4 +1,6 @@
-use crate::definitions;
+use std::collections::HashMap;
+
+use crate::library::Command;
 use crate::parser;
 use crate::types;
 pub mod gta3;
@@ -10,7 +12,7 @@ pub enum Game {
 pub fn get_parser<'a>(
     game: &Game,
     chunk: &'a types::ScriptChunk,
-    definitions: &'a definitions::DefinitionMap,
+    definitions: &'a HashMap<types::Opcode, Command>,
     base_offset: u32,
 ) -> Box<dyn parser::Parse<'a> + 'a> {
     match game {

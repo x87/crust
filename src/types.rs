@@ -1,15 +1,12 @@
 use itertools::Itertools;
 use std::str;
 
-// const PARAM_ANY: &str = "any";
-pub const PARAM_ARGUMENTS: &str = "arguments";
-pub const PARAM_OFFSET: &str = "label";
 pub const INVALID_OPCODE: &str = "invalid";
 
 pub type Opcode = u16;
 pub type ScriptChunk = Vec<u8>;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum ScriptType {
     MAIN,
     MISSION,

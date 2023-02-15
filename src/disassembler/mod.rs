@@ -1,8 +1,10 @@
 pub mod scanner;
 
-use crate::definitions::*;
+use crate::library::Command;
+use crate::types;
 use crate::types::*;
 
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::io::prelude::*;
 use std::{collections, fs, path};
@@ -31,12 +33,15 @@ fn get_out_file_name(script_name: &String) -> String {
 }
 
 pub struct Disassembler<'a> {
-    definitions: &'a DefinitionMap,
+    definitions: &'a HashMap<types::Opcode, Command>,
     scanner: &'a scanner::Scanner,
 }
 
 impl<'a> Disassembler<'a> {
-    pub fn new(definitions: &'a DefinitionMap, scanner: &'a scanner::Scanner) -> Self {
+    pub fn new(
+        definitions: &'a HashMap<types::Opcode, Command>,
+        scanner: &'a scanner::Scanner,
+    ) -> Self {
         Self {
             definitions,
             scanner,
@@ -45,16 +50,15 @@ impl<'a> Disassembler<'a> {
 
     pub fn run(&self, instructions: Vec<Box<Instruction>>, script_type: ScriptType) -> IR {
         let mut name = String::from("noname");
+
         let name_def = self
             .definitions
-            .find_by_attr(attribute::NAME)
-            .expect(&format!(
-                "Can't find a command with attribute {}",
-                attribute::NAME
-            ));
+            .iter()
+            .find(|(_id, c)| c.name == "SCRIPT_NAME")
+            .expect(&format!("Can't find a command with name SCRIPT_NAME"));
 
         for i in &instructions {
-            if i.opcode == name_def.id {
+            if i.opcode == *name_def.0 {
                 name = i.params.get(0).unwrap().to_string();
                 break;
             }

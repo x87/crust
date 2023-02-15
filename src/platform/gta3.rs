@@ -1,8 +1,11 @@
-use crate::definitions;
+use crate::library::Command;
+use crate::library::CommandParamType;
 use crate::parser;
+use crate::types;
 use crate::types::*;
 
 use byteorder::{LittleEndian, ReadBytesExt};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::Read;
 use std::{fmt, io, str};
@@ -118,7 +121,7 @@ impl<'a> Parser3<'a> {
     fn to_param(
         &mut self,
         data_type: DataType3,
-        param_type: &String,
+        param_type: &CommandParamType,
     ) -> Result<Box<dyn InstructionParam>, io::Error> {
         match data_type {
             DataType3::EOL => Ok(Box::new(InstructionParam3::EOL)),
@@ -129,7 +132,7 @@ impl<'a> Parser3<'a> {
             ))),
             DataType3::NUM32 => {
                 let val = self.0.cursor.read_i32::<LittleEndian>()?;
-                if param_type == PARAM_OFFSET {
+                if param_type == &CommandParamType::Label {
                     Ok(Box::new(InstructionParam3::OFFSET(val)))
                 } else {
                     Ok(Box::new(InstructionParam3::NUM32(val)))
@@ -159,19 +162,15 @@ impl<'a> Parser3<'a> {
 
     pub fn try_next(&mut self, offset: u32) -> Result<Instruction, io::Error> {
         let opcode = self.0.cursor.read_u16::<LittleEndian>()?;
-        let def = self
-            .0
-            .definitions
-            .find_by_op(&(opcode & 0x7FFF))
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Unknown opcode {} at {}", opcode, offset),
-                )
-            })?;
+        let def = self.0.definitions.get(&(opcode & 0x7FFF)).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Unknown opcode {} at {}", opcode, offset),
+            )
+        })?;
         let mut params = vec![];
 
-        'outer: for param in &def.params {
+        'outer: for param in def.input.iter().chain(def.output.iter()) {
             loop {
                 let offset = self.0.get_position();
                 let next_byte = self.0.cursor.read_u8()?;
@@ -188,7 +187,7 @@ impl<'a> Parser3<'a> {
                 }
 
                 if let DataType3::EOL = data_type {
-                    if param.r#type != PARAM_ARGUMENTS {
+                    if param.r#type != CommandParamType::Arguments {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             format!("Unexpected EOL parameter at {}", offset),
@@ -199,7 +198,7 @@ impl<'a> Parser3<'a> {
 
                 params.push(self.to_param(data_type, &param.r#type)?);
 
-                if param.r#type != PARAM_ARGUMENTS {
+                if param.r#type != CommandParamType::Arguments {
                     break;
                 }
             }
@@ -215,7 +214,7 @@ impl<'a> Parser3<'a> {
 
     pub fn new(
         chunk: &'a ScriptChunk,
-        definitions: &'a definitions::DefinitionMap,
+        definitions: &'a HashMap<types::Opcode, Command>,
         base_offset: u32,
     ) -> Self {
         Self {

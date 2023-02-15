@@ -1,27 +1,26 @@
-use crate::definitions;
-use crate::types;
-use std::collections;
+use crate::{
+    library::{Command, CommandParamType},
+    types,
+};
+use std::collections::{self, HashMap};
 
 pub struct Scanner {
-    // definitions: &'a definitions::DefinitionMap,
     branch_ops: Vec<types::Opcode>,
 }
 
 impl<'a> Scanner {
-    pub fn new(definitions: &'a definitions::DefinitionMap) -> Self {
-        let branch_ops: Vec<u16> = definitions
-            .find_all_by_attr(definitions::attribute::BRANCH)
-            .expect(&format!(
-                "Can't find a command with attribute {}",
-                definitions::attribute::BRANCH
-            ))
+    pub fn new(definitions: &'a HashMap<types::Opcode, Command>) -> Self {
+        let branch_ops = definitions
             .iter()
-            .map(|c| c.id)
-            .collect();
-        Self {
-            // definitions,
-            branch_ops,
-        }
+            .filter(|(_id, c)| {
+                c.input
+                    .iter()
+                    .find(|i| i.r#type == CommandParamType::Label)
+                    .is_some()
+            })
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        Self { branch_ops }
     }
     pub fn collect_global_addresses(
         &self,
