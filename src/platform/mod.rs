@@ -1,12 +1,17 @@
 use std::collections::HashMap;
 
+use clap::ValueEnum;
+
 use crate::library::Command;
 use crate::parser;
 use crate::types;
 pub mod gta3;
+pub mod vc;
 
+#[derive(Debug, Clone, ValueEnum)]
 pub enum Game {
     GTA3,
+    VC
 }
 
 pub fn get_parser<'a>(
@@ -17,6 +22,6 @@ pub fn get_parser<'a>(
 ) -> Box<dyn parser::Parse<'a> + 'a> {
     match game {
         Game::GTA3 => Box::new(gta3::Parser3::new(chunk, definitions, base_offset)),
-        _ => unimplemented!(),
+        Game::VC => Box::new(vc::ParserVC::new(chunk, definitions, base_offset)),
     }
 }

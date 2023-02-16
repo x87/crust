@@ -164,7 +164,7 @@ pub struct Library {
 }
 
 impl Library {
-    pub fn from_meta_file(path: &str) -> Option<Self> {
+    pub fn new(path: &str) -> Option<Self> {
         let content = std::fs::read_to_string(path).unwrap_or_default();
         let library = serde_json::from_str::<Library>(&content).ok()?;
         Some(library)
@@ -233,7 +233,7 @@ where
                     "1.0" => acc.push(Version::_10),
                     "1.0 [DE]" => acc.push(Version::_10DE),
                     _ => {
-                        panic!("Unknown version {el}");
+                        // panic!("Unknown version {el}");
                     }
                 };
                 Some(acc)

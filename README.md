@@ -12,5 +12,6 @@ Check out [Releases](https://github.com/x87/crust/releases) page.
 ### Run
 
 ```sh
-crust.exe scm\gta3.scm
+crust.exe scm\gta3.scm gta3.json --game gta3
+crust.exe scm\vc.scm vc.json --game vc
 ```

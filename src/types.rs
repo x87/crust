@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use std::str;
+use std::{str, fmt::{Formatter, Display}};
 
 pub const INVALID_OPCODE: &str = "invalid";
 
@@ -25,12 +25,10 @@ pub struct Instruction {
     pub params: Vec<Box<dyn InstructionParam>>,
 }
 
-impl Instruction {
-    pub fn print(&mut self) -> String
-// where
-    //     F: FnMut((usize, &Box<dyn InstructionParam>)) -> &dyn std::fmt::Display,
-    {
-        format!(
+impl Display for Instruction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
             "{{{:>0width$}}} {} {}",
             self.offset,
             self.name,

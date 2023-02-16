@@ -152,50 +152,53 @@ pub fn load(
 
     let segments = get_segments(&chunk, game, defs);
     let script_file = ScriptFile::new(chunk);
-    let mut scripts = Vec::new();
 
-    if segments.len() > 0 {
-        match segments.len() {
-            0..=2 => return Err(String::from("No missions segment found")),
-            3 | 6 => {}
-            _ => return Err(String::from("Invalid header structure")),
+    match segments.len() {
+        0 => {
+            let main_script = script_file.extract(0, script_file.size);
+            return Ok(vec![Script::new(
+                main_script.to_vec(),
+                ScriptType::EXTERNAL,
+                0,
+            )]);
         }
-        let (offset, end) = segments.get(MISSIONS_SEG).unwrap();
-        let missions = Missions::new(script_file.extract(*offset, *end), script_file.size);
-        let (_, main_start) = segments.last().unwrap();
-        let main_script = script_file.extract(*main_start, missions.main_size);
-        scripts.push(Script::new(
-            main_script.to_vec(),
-            ScriptType::MAIN,
-            *main_start,
-        ));
-        for (start, end) in missions {
-            // todo: empty missions
-            if end > start {
+        1 | 2 => return Err(String::from("No missions segment found")),
+        3 | 6 => {}
+        _ => return Err(String::from("Invalid header structure")),
+    }
+    let (offset, end) = segments.get(MISSIONS_SEG).unwrap();
+    let missions = Missions::new(script_file.extract(*offset, *end), script_file.size);
+    let (_, main_start) = segments.last().unwrap();
+    let main_script = script_file.extract(*main_start, missions.main_size);
+    let mut scripts = vec![Script::new(
+        main_script.to_vec(),
+        ScriptType::MAIN,
+        *main_start,
+    )];
+
+    for (start, end) in missions {
+        // todo: empty missions
+        if end > start {
+            scripts.push(Script::new(
+                script_file.extract(start, end).to_vec(),
+                ScriptType::MISSION,
+                0,
+            ));
+        }
+    }
+    if let Some((offset, end)) = segments.get(EXTERNALS_SEG) {
+        let externals: Vec<String> = Externals::new(script_file.extract(*offset, *end)).collect();
+        if externals.len() > 0 {
+            let script_img = ImgArchive::new(String::from("script.img"));
+            for name in externals {
                 scripts.push(Script::new(
-                    script_file.extract(start, end).to_vec(),
-                    ScriptType::MISSION,
+                    script_img.extract(name).to_vec(),
+                    ScriptType::EXTERNAL,
                     0,
                 ));
             }
         }
-        if let Some((offset, end)) = segments.get(EXTERNALS_SEG) {
-            let externals: Vec<String> =
-                Externals::new(script_file.extract(*offset, *end)).collect();
-            if externals.len() > 0 {
-                let script_img = ImgArchive::new(String::from("script.img"));
-                for name in externals {
-                    scripts.push(Script::new(
-                        script_img.extract(name).to_vec(),
-                        ScriptType::EXTERNAL,
-                        0,
-                    ));
-                }
-            }
-        }
-    } else {
-        let main_script = script_file.extract(0, script_file.size);
-        scripts.push(Script::new(main_script.to_vec(), ScriptType::EXTERNAL, 0));
     }
+
     Ok(scripts)
 }

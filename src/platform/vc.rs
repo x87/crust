@@ -8,79 +8,12 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::Read;
-use std::{fmt, io, str};
+use std::{io, str};
 
-#[derive(Debug, Clone)]
-pub enum InstructionParam3 {
-    EOL,
-    RAW(u8),
-    NUM32(i32),
-    FLOAT(f32),
-    STR(String),
-    GVAR(u16),
-    LVAR(u16),
-    OFFSET(i32),
-}
+use super::gta3::DataType3;
+use super::gta3::InstructionParam3;
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum DataType3 {
-    EOL,
-    NUM8,
-    NUM16,
-    NUM32,
-    FLOAT,
-    STR8,
-    GVAR,
-    LVAR,
-}
-
-impl TryFrom<u8> for DataType3 {
-    type Error = std::convert::Infallible;
-    fn try_from(data_type: u8) -> Result<Self, Self::Error> {
-        match data_type {
-            0 => Ok(DataType3::EOL),
-            1 => Ok(DataType3::NUM32),
-            2 => Ok(DataType3::GVAR),
-            3 => Ok(DataType3::LVAR),
-            4 => Ok(DataType3::NUM8),
-            5 => Ok(DataType3::NUM16),
-            6 => Ok(DataType3::FLOAT),
-            _ => Ok(DataType3::STR8),
-        }
-    }
-}
-
-impl fmt::Display for InstructionParam3 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            InstructionParam3::EOL => write!(f, ""),
-            InstructionParam3::STR(d) => write!(f, "\"{}\"", d),
-            InstructionParam3::NUM32(d) => write!(f, "{}", d),
-            InstructionParam3::OFFSET(d) => write!(f, "{}", d.abs()),
-            InstructionParam3::FLOAT(d) => write!(f, "{}", d),
-            InstructionParam3::GVAR(d) => write!(f, "gvar_{}", d),
-            InstructionParam3::LVAR(d) => write!(f, "lvar_{}", d),
-            InstructionParam3::RAW(d) => write!(f, "{:02X}", d),
-        }
-    }
-}
-
-impl InstructionParam for InstructionParam3 {
-    fn to_string(&self) -> Option<String> {
-        match self {
-            InstructionParam3::STR(d) => Some(String::from(d)),
-            _ => None,
-        }
-    }
-    fn to_offset(&self) -> Option<i32> {
-        match self {
-            InstructionParam3::OFFSET(d) => Some(*d),
-            _ => None,
-        }
-    }
-}
-
-impl<'a> Iterator for Parser3<'a> {
+impl<'a> Iterator for ParserVC<'a> {
     type Item = Box<Instruction>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -97,9 +30,9 @@ impl<'a> Iterator for Parser3<'a> {
     }
 }
 
-pub struct Parser3<'a>(pub parser::Parser<'a>);
+pub struct ParserVC<'a>(pub parser::Parser<'a>);
 
-impl<'a> Parser3<'a> {
+impl<'a> ParserVC<'a> {
     pub fn get_raw(&mut self) -> Result<InstructionParam3, io::Error> {
         Ok(InstructionParam3::RAW(self.0.cursor.read_u8()?))
     }
@@ -151,9 +84,9 @@ impl<'a> Parser3<'a> {
                     )))
                 }
             }
-            DataType3::FLOAT => Ok(Box::new(InstructionParam3::FLOAT(
-                f32::from(self.0.cursor.read_i16::<LittleEndian>()?) / 16.0,
-            ))),
+            DataType3::FLOAT => Ok(Box::new(InstructionParam3::FLOAT(f32::from(
+                self.0.cursor.read_f32::<LittleEndian>()?,
+            )))),
         }
     }
 
@@ -220,7 +153,7 @@ impl<'a> Parser3<'a> {
     }
 }
 
-impl<'a> parser::Parse<'a> for Parser3<'a> {
+impl<'a> parser::Parse<'a> for ParserVC<'a> {
     fn get_parser(&self) -> &parser::Parser<'a> {
         &self.0
     }

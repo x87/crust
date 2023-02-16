@@ -11,6 +11,7 @@ use std::{collections, fs, path};
 
 use slugify::slugify;
 
+#[derive(Default)]
 pub struct GlobalContext {
     pub targets: Vec<i32>,
 }
@@ -78,28 +79,6 @@ impl<'a> Disassembler<'a> {
             state: LocalContext { targets },
         }
     }
-
-    pub fn print(&self, mut ir: IR, global_context: &GlobalContext) {
-        let mut f = fs::File::create(get_out_file_name(&ir.name)).unwrap();
-        for inst in ir.instructions.iter_mut() {
-            let inst_offset: i32 = inst.offset.try_into().unwrap();
-
-            match ir.script_type {
-                ScriptType::MAIN => {
-                    if global_context.targets.contains(&inst_offset) {
-                        writeln!(f, "\n:{}", inst.offset).unwrap()
-                    }
-                }
-                _ => {
-                    if ir.state.targets.contains(&(-inst_offset)) {
-                        writeln!(f, "\n:{}", inst.offset).unwrap()
-                    }
-                }
-            }
-
-            writeln!(f, "{}", inst.print()).unwrap();
-        }
-    }
 }
 
 pub struct IR {
@@ -107,4 +86,28 @@ pub struct IR {
     pub instructions: Vec<Box<Instruction>>,
     script_type: ScriptType,
     state: LocalContext,
+}
+
+impl IR {
+    pub fn print(self, global_context: &GlobalContext) {
+        let mut f = fs::File::create(get_out_file_name(&self.name)).unwrap();
+        for inst in self.instructions.iter() {
+            let inst_offset: i32 = inst.offset.try_into().unwrap();
+
+            match self.script_type {
+                ScriptType::MAIN => {
+                    if global_context.targets.contains(&inst_offset) {
+                        writeln!(f, "\n:{}", inst.offset).unwrap()
+                    }
+                }
+                _ => {
+                    if self.state.targets.contains(&(-inst_offset)) {
+                        writeln!(f, "\n:{}", inst.offset).unwrap()
+                    }
+                }
+            }
+
+            writeln!(f, "{}", inst).unwrap();
+        }
+    }
 }
